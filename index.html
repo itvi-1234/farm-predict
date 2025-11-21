@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIH Agri-Intelligence | AI Farm Advisory</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        
+        /* --- MAP STYLES --- */
+        #map-container {
+            position: relative;
+            height: 600px; /* Thoda aur bada kiya map */
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e2e8f0;
+        }
+        #map { height: 100%; width: 100%; }
+
+        /* Floating Search Box */
+        #search-input {
+            background-color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            margin-top: 10px;
+            padding: 12px 20px;
+            width: 350px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 1px solid #cbd5e1;
+            outline: none;
+            transition: box-shadow 0.3s;
+        }
+        #search-input:focus { box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3); border-color: #059669; }
+
+        /* Field Label Text */
+        .field-label-text {
+            color: white !important;
+            font-weight: 900;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px #000000;
+            font-family: 'Inter', sans-serif;
+            pointer-events: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* --- INSTRUCTION CARD (Floating) --- */
+        .instruction-card {
+            position: absolute;
+            bottom: 25px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            max-width: 260px;
+            border-left: 5px solid #059669; /* Green accent */
+        }
+
+        /* Loader Overlay */
+        .loader-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85); z-index: 9999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid #059669; border-radius: 50%;
+            width: 50px; height: 50px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Toast */
+        #toast {
+            visibility: hidden; min-width: 280px; background-color: #1f2937; color: #fff;
+            text-align: center; border-radius: 8px; padding: 14px 24px; position: fixed;
+            z-index: 10000; left: 50%; bottom: 40px; transform: translateX(-50%);
+            font-size: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            opacity: 0; transition: all 0.3s; font-weight: 500;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        #toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <!-- 1. Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 flex items-center gap-2">
+                        <div class="bg-green-600 text-white p-1.5 rounded-lg">
+                            <i class="fa-solid fa-wheat-awn text-xl"></i>
+                        </div>
+                        <span class="font-bold text-xl text-slate-800 tracking-tight">FarmGuard<span class="text-green-600">AI</span></span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="hidden md:inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                        <span class="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                        Satellite Connected
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        <!-- 2. Map Section -->
+        <div class="mb-8">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">Select Field Region</h2>
+                    <p class="text-sm text-slate-500">Draw boundary to analyze soil & crop health</p>
+                </div>
+            </div>
+            
+            <div id="map-container">
+                <input id="search-input" type="text" placeholder="🔍 Search location (e.g. Hyderabad, Punjab)...">
+                
+                <!-- 🔥 NEW INSTRUCTIONS CARD -->
+                <div class="instruction-card">
+                    <h4 class="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-pen-ruler text-green-600"></i> How to Draw
+                    </h4>
+                    <ol class="text-xs text-slate-600 space-y-2 list-decimal pl-4 font-medium">
+                        <li>Select the <b>Line Tool</b> (Top Center).</li>
+                        <li>Click corners of your field.</li>
+                        <li><b>Double-click</b> to finish.</li>
+                    </ol>
+                    <div class="mt-3 pt-2 border-t border-slate-200">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">AI Analysis starts automatically</p>
+                    </div>
+                </div>
+
+                <div id="map"></div>
+            </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" class="hidden loader-overlay">
+            <div class="spinner mb-4"></div>
+            <h2 class="text-xl font-bold text-slate-800">Analyzing Field Data...</h2>
+            <p class="text-sm text-slate-500">Processing Satellite Imagery, NDVI & Weather Models</p>
+        </div>
+
+        <!-- 3. Results Dashboard -->
+        <div id="results-area" class="hidden animate-fade-in pb-10">
+            
+            <!-- Header -->
+            <div class="border-b border-slate-200 pb-4 mb-6 flex justify-between items-end">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900">Farm Intelligence Report</h2>
+                    <p class="text-sm text-slate-500 mt-1">Real-time insights & 14-day forecast</p>
+                </div>
+                <span id="res-zone" class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded uppercase tracking-wide border border-slate-200">
+                    ZONE LOADING...
+                </span>
+            </div>
+
+            <!-- Top Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- NDVI -->
+                <div class="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-start justify-between">
+                    <div>
+                        <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Vegetation Index</p>
+                        <h3 id="res-ndvi" class="text-3xl font-extrabold text-slate-800 mt-2">0.00</h3>
+                        <p class="text-xs text-green-600 mt-1 font-medium bg-green-50 inline-block px-1 rounded">Current Status</p>
+                    </div>
+                    <div class="p-3 bg-green-50 rounded-full text-green-600"><i class="fa-solid fa-leaf text-xl"></i></div>
+                </div>
+
+                <!-- Moisture -->
+                <div class="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex items-start justify-between">
+                    <div>
+                        <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Soil Moisture</p>
+                        <h3 id="res-sm" class="text-3xl font-extrabold text-slate-800 mt-2">0.00</h3>
+                        <p class="text-xs text-blue-600 mt-1 font-medium bg-blue-50 inline-block px-1 rounded">Volumetric (m³/m³)</p>
+                    </div>
+                    <div class="p-3 bg-blue-50 rounded-full text-blue-600"><i class="fa-solid fa-droplet text-xl"></i></div>
+                </div>
+
+                <!-- Stress Meter -->
+                <div class="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                    <div class="flex justify-between items-start">
+                        <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Crop Stress Index</p>
+                        <i class="fa-solid fa-chart-simple text-slate-300"></i>
+                    </div>
+                    <div class="flex items-end gap-2 mt-2">
+                        <h3 id="stress-score" class="text-3xl font-extrabold text-red-600">0</h3>
+                        <span class="text-sm text-slate-400 font-medium mb-1">/ 100</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2 mt-3">
+                        <div id="stress-bar" class="bg-red-500 h-2 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. Advisory Columns -->
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-clipboard-list text-green-600"></i> Advisory & Forecast
+            </h3>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Day 1 -->
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                    <div class="bg-blue-50 px-5 py-3 border-b border-blue-100 flex justify-between items-center">
+                        <span class="font-bold text-blue-800 text-sm"><i class="fa-regular fa-clock mr-1"></i> Tomorrow</span>
+                        <span class="text-[10px] font-bold bg-white px-2 py-0.5 rounded text-blue-600 border border-blue-100">DAY 1</span>
+                    </div>
+                    <div class="p-5 flex-1">
+                        <!-- Forecast Row -->
+                        <div class="flex justify-between mb-4 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            <div class="w-1/2 border-r border-slate-200">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">NDVI</p>
+                                <p id="d1-ndvi" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                            <div class="w-1/2">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">Moisture</p>
+                                <p id="d1-sm" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                        </div>
+                        <!-- Risks -->
+                        <div class="space-y-3 mb-5">
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Disease Risk</span><span id="d1-dis">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d1-dis-bar" class="bg-orange-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Pest Risk</span><span id="d1-pest">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d1-pest-bar" class="bg-red-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                        </div>
+                        <ul id="d1-advice" class="space-y-2"></ul>
+                    </div>
+                </div>
+
+                <!-- Day 7 -->
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                    <div class="bg-purple-50 px-5 py-3 border-b border-purple-100 flex justify-between items-center">
+                        <span class="font-bold text-purple-800 text-sm"><i class="fa-solid fa-calendar-week mr-1"></i> Next Week</span>
+                        <span class="text-[10px] font-bold bg-white px-2 py-0.5 rounded text-purple-600 border border-purple-100">DAY 7</span>
+                    </div>
+                    <div class="p-5 flex-1">
+                         <div class="flex justify-between mb-4 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            <div class="w-1/2 border-r border-slate-200">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">NDVI</p>
+                                <p id="d7-ndvi" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                            <div class="w-1/2">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">Moisture</p>
+                                <p id="d7-sm" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                        </div>
+                        <div class="space-y-3 mb-5">
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Disease Risk</span><span id="d7-dis">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d7-dis-bar" class="bg-orange-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Pest Risk</span><span id="d7-pest">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d7-pest-bar" class="bg-red-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                        </div>
+                        <ul id="d7-advice" class="space-y-2"></ul>
+                    </div>
+                </div>
+
+                <!-- Day 14 -->
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                    <div class="bg-indigo-50 px-5 py-3 border-b border-indigo-100 flex justify-between items-center">
+                        <span class="font-bold text-indigo-800 text-sm"><i class="fa-solid fa-calendar-days mr-1"></i> In 2 Weeks</span>
+                        <span class="text-[10px] font-bold bg-white px-2 py-0.5 rounded text-indigo-600 border border-indigo-100">DAY 14</span>
+                    </div>
+                    <div class="p-5 flex-1">
+                         <div class="flex justify-between mb-4 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            <div class="w-1/2 border-r border-slate-200">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">NDVI</p>
+                                <p id="d14-ndvi" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                            <div class="w-1/2">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase">Moisture</p>
+                                <p id="d14-sm" class="text-sm font-bold text-slate-700">-</p>
+                            </div>
+                        </div>
+                        <div class="space-y-3 mb-5">
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Disease Risk</span><span id="d14-dis">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d14-dis-bar" class="bg-orange-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs font-semibold mb-1 text-slate-600"><span>Pest Risk</span><span id="d14-pest">-</span></div>
+                                <div class="w-full bg-slate-100 rounded-full h-1.5"><div id="d14-pest-bar" class="bg-red-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                            </div>
+                        </div>
+                        <ul id="d14-advice" class="space-y-2"></ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast"><i class="fa-solid fa-info-circle"></i> <span>Loading...</span></div>
+
+    <!-- SCRIPTS -->
+    <script>
+        // ⚠️ API URL (Ensure correct endpoint)
+        const API_URL = "https://itvi-1234-lstmnew.hf.space/predict"; 
+        
+        let map;
+        let drawingManager;
+
+        function showToast(msg, isError=false) {
+            const toast = document.getElementById('toast');
+            toast.innerHTML = isError ? `<i class="fa-solid fa-circle-xmark text-red-400"></i> <span>${msg}</span>` : `<i class="fa-solid fa-circle-check text-green-400"></i> <span>${msg}</span>`;
+            toast.className = "show";
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
+        // --- MAP INIT ---
+        function initMap() {
+            const startLoc = { lat: 17.3266, lng: 78.1695 };
+
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: startLoc, 
+                zoom: 16, 
+                mapTypeId: 'satellite',
+                tilt: 0,
+                disableDefaultUI: false,
+                streetViewControl: false
+            });
+
+            const input = document.getElementById('search-input');
+            const searchBox = new google.maps.places.SearchBox(input);
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
+
+            searchBox.addListener('places_changed', () => {
+                const places = searchBox.getPlaces();
+                if (places.length == 0) return;
+                const bounds = new google.maps.LatLngBounds();
+                places.forEach(place => {
+                    if (place.geometry.viewport) bounds.union(place.geometry.viewport);
+                    else bounds.extend(place.geometry.location);
+                });
+                map.fitBounds(bounds);
+            });
+
+            // Use POLYLINE as requested (user draws line, we make it polygon)
+            drawingManager = new google.maps.drawing.DrawingManager({
+                drawingMode: google.maps.drawing.OverlayType.POLYLINE,
+                drawingControl: true,
+                drawingControlOptions: {
+                    position: google.maps.ControlPosition.TOP_CENTER,
+                    drawingModes: ['polyline']
+                },
+                polylineOptions: {
+                    strokeColor: '#fbbf24', // Amber-400 for visibility
+                    strokeWeight: 4,
+                    editable: true,
+                    zIndex: 1
+                }
+            });
+            drawingManager.setMap(map);
+
+            google.maps.event.addListener(drawingManager, 'overlaycomplete', (event) => {
+                if (event.type === 'polyline') {
+                    drawingManager.setDrawingMode(null);
+                    drawingManager.setOptions({ drawingControl: false });
+
+                    const polyline = event.overlay;
+                    const path = polyline.getPath();
+                    let coords = [];
+                    path.getArray().forEach(p => coords.push({ lat: p.lat(), lng: p.lng() }));
+                    polyline.setMap(null); 
+
+                    // Permanent Field
+                    new google.maps.Polygon({
+                        paths: coords,
+                        strokeColor: '#ffffff',
+                        strokeOpacity: 1.0,
+                        strokeWeight: 2,
+                        fillColor: '#22c55e', // Green
+                        fillOpacity: 0.4,
+                        map: map
+                    });
+
+                    let centroid = computeCentroid(coords);
+                    new google.maps.Marker({
+                        position: centroid,
+                        map: map,
+                        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+                        label: { text: "FIELD 1", color: "white", fontSize: "16px", className: "field-label-text" },
+                        zIndex: 1000
+                    });
+
+                    predictFarm(centroid.lat, centroid.lng);
+                }
+            });
+        }
+
+        function computeCentroid(coords){
+            let latSum = 0, lngSum = 0;
+            coords.forEach(c => { latSum += c.lat; lngSum += c.lng; });
+            return { lat: latSum / coords.length, lng: lngSum / coords.length };
+        }
+
+        async function predictFarm(lat, lon) {
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('results-area').classList.add('hidden');
+            showToast("Analyzing Satellite Data...");
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat: lat, lon: lon })
+                });
+
+                if (!response.ok) throw new Error(`Status: ${response.status}`);
+                const result = await response.json();
+
+                if(result.success) {
+                    renderData(result.data);
+                    showToast("Analysis Complete!");
+                } else {
+                    showToast("API Error: " + result.error, true);
+                }
+            } catch (error) {
+                console.error(error);
+                showToast("Connection Failed. Check Internet.", true);
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
+            }
+        }
+
+        function renderData(data) {
+            document.getElementById('results-area').classList.remove('hidden');
+            
+            // Overview
+            document.getElementById('res-zone').innerText = data.zone.replace('ZONE_', '').replace('_', ' ');
+            document.getElementById('res-ndvi').innerText = data.current_status.ndvi;
+            document.getElementById('res-sm').innerText = data.current_status.sm;
+            
+            // Stress Meter
+            const score = data.stress_index;
+            document.getElementById('stress-score').innerText = score;
+            const bar = document.getElementById('stress-bar');
+            bar.style.width = score + "%";
+            
+            // Dynamic Color
+            bar.className = "h-2 rounded-full transition-all duration-1000 " + 
+                           (score < 30 ? "bg-green-500" : score < 60 ? "bg-yellow-500" : "bg-red-600");
+
+            fillColumn('day_1', data, 'd1');
+            fillColumn('day_7', data, 'd7');
+            fillColumn('day_14', data, 'd14');
+
+            // Smooth Scroll
+            setTimeout(() => {
+                document.getElementById('results-area').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        function cleanText(text) {
+            return text ? text.replace(/Day \d+: /g, '').replace(/Action: /g, '').replace(/Status: /g, '').replace(/Warning: /g, '').trim() : "";
+        }
+
+        function fillColumn(dayKey, data, prefix) {
+            const f = data.forecast[dayKey];
+            const adv = data.advisory_report[dayKey];
+
+            document.getElementById(`${prefix}-ndvi`).innerText = f.ndvi;
+            document.getElementById(`${prefix}-sm`).innerText = f.sm;
+            document.getElementById(`${prefix}-dis`).innerText = f.disease_risk + "%";
+            document.getElementById(`${prefix}-dis-bar`).style.width = f.disease_risk + "%";
+            document.getElementById(`${prefix}-pest`).innerText = f.pest_risk + "%";
+            document.getElementById(`${prefix}-pest-bar`).style.width = f.pest_risk + "%";
+
+            const list = document.getElementById(`${prefix}-advice`);
+            list.innerHTML = "";
+            const uniqueItems = new Set();
+
+            const addItem = (arr, color, icon) => {
+                if(!arr) return;
+                arr.forEach(t => {
+                    const txt = cleanText(t);
+                    if(!uniqueItems.has(txt)) {
+                        uniqueItems.add(txt);
+                        list.innerHTML += `<li class="text-xs flex items-start gap-2 text-slate-600 bg-white border border-slate-100 p-2 rounded shadow-sm"><i class="${icon} ${color} mt-0.5 flex-shrink-0"></i> <span class="leading-tight">${txt}</span></li>`;
+                    }
+                });
+            };
+
+            addItem(adv.alerts, "text-red-500", "fa-solid fa-triangle-exclamation");
+            addItem(adv.action, "text-blue-600", "fa-solid fa-screwdriver-wrench");
+            addItem(adv.warning, "text-orange-500", "fa-solid fa-eye");
+            addItem(adv.status, "text-green-600", "fa-solid fa-circle-check");
+
+            if(list.innerHTML === "") list.innerHTML = "<li class='text-xs text-gray-400 italic p-2'>No specific advisory available.</li>";
+        }
+    </script>
+
+    <!-- GOOGLE MAPS API KEY (REPLACE IT) -->
+    <script async defer 
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDKR_CVLRbV0lqjy_8JRWZAVDdO5Xl7jRk&libraries=places,drawing&callback=initMap">
+    </script>
+
+</body>
+</html>
